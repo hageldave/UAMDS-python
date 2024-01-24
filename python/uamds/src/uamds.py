@@ -61,36 +61,70 @@ def stress_ij(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre:
     cj = affine_transforms[j, :]
     Bj = affine_transforms[n+j*d_hi : n+(j+1)*d_hi, :]
 
+    ci_sub_cj = ci-cj
+
     # compute term 1 : part 1 : ||Si - Si^(1/2)Bi^T BiSi^(1/2)||_F^2
-    temp = Bi @ Ssqrti
-    temp = Si - (temp.T @ temp)
+    temp = Ssqrti @ Bi
+    temp = Si - (temp @ temp.T)
     part1 = (temp*temp).sum()  # sum of squared elements = squared frobenius norm
     # compute term 1 : part 2 : same as part 1 but with j
-    temp = Bj @ Ssqrtj
-    temp = Sj - (temp.T @ temp)
-    part2 = (temp * temp).sum()  # sum of squared elements = squared frobenius norm
+    temp = Ssqrtj @ Bj
+    temp = Sj - (temp @ temp.T)
+    part2 = (temp*temp).sum()  # sum of squared elements = squared frobenius norm
     # compute term 1 : part 3
     temp = (Ssqrti @ Bi) @ (Bj.T @ Ssqrtj)  # outer product of transformed Bs
     temp = pre['Ssqrti_UiTUj_Ssqrtj'][i][j] - temp
-    part3 = (temp * temp).sum()  # sum of squared elements = squared frobenius norm
+    part3 = (temp*temp).sum()  # sum of squared elements = squared frobenius norm
     term1 = 2*(part1+part2)+4*part3
 
     # compute term 2 : part 1 : sum_k^n [ Si_k * ( <Ui_k, mui-muj> - <Bi_k, ci-cj> )^2 ]
-    temp = (ci-cj) @ Bi.T
+    temp = ci_sub_cj @ Bi.T
     temp = pre['mui_sub_muj_TUi'][i][j] - temp
     temp = temp*temp  # squared
     part1 = (temp @ Si).sum()
+    # compute term 2 : part 2 : same as part 1 but with j
+    temp = ci_sub_cj @ Bj.T
+    temp = pre['mui_sub_muj_TUj'][i][j] - temp
+    temp = temp*temp  # squared
+    part2 = (temp @ Sj).sum()
+    term2 = part1+part2
+
+    # compute term 3 : part 1
+    norm1 = pre['norm2_mui_sub_muj'][i][j]
+    norm2 = np.dot(ci_sub_cj,ci_sub_cj)  # squared norm
+    part1 = norm1-norm2
+    # compute term 3 : part 2
+    part2 = 0
+    part3 = 0
+    for k in range(d_hi):
+        sigma_i = Si[k, k]
+        sigma_j = Sj[k, k]
+        bik = Bi[k, :]
+        bjk = Bj[k, :]
+        part2 += (1 - np.dot(bik,bik))*sigma_i
+        part3 += (1 - np.dot(bjk,bjk))*sigma_j
+    term3 = (part1 + part2 + part3)**2
+
+    return term1+term2+term3
+
+
 
 def main():
     n = 4
     d = 6
+    lo_d = 2
 
-    means = np.vstack([(np.ones(d)*(i+1)) for i in range(n)])
+    means = np.vstack([np.ones(d)*(i+1) for i in range(n)])
     covs = np.vstack([np.eye(d)*(i+1) for i in range(n)])
     normal_distr_spec = np.vstack([means, covs])
     constants = precalculate_constants(normal_distr_spec)
-    print(constants.keys())
 
+    c = np.vstack([np.zeros(lo_d) for i in range(n)])
+    B = np.vstack([np.ones((d,lo_d)) for i in range(n)])
+    affine_transforms = np.vstack([c,B])
+
+    s = stress_ij(normal_distr_spec, affine_transforms, constants, 1, 2)
+    print(s)
 
 if __name__ == '__main__':
     main()
