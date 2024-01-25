@@ -45,7 +45,7 @@ def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc
     if precalc_constants is None:
         precalc_constants = precalculate_constants(normal_distr_spec)
 
-def stress_ij(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: dict, i: int, j: int) -> float:
+def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: dict) -> float:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
@@ -108,6 +108,53 @@ def stress_ij(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre:
     return term1+term2+term3
 
 
+def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: dict) -> np.ndarray:
+    d_hi = normal_distr_spec.shape[1]
+    d_lo = affine_transforms.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+    # get some objects for i
+    Si = pre['S'][i]
+    mui = pre['mu'][i]
+    ci = affine_transforms[i, :]
+    Bi = affine_transforms[n + i * d_hi: n + (i + 1) * d_hi, :].T
+    BiSi = Bi @ Si
+
+
+    # get some objects for j
+    Sj = pre['S'][j]
+    muj = pre['mu'][j]
+    cj = affine_transforms[j, :]
+    Bj = affine_transforms[n + j * d_hi: n + (j + 1) * d_hi, :].T
+    BjSj = Bj @ Sj
+
+    mui_sub_muj = mui - muj
+    ci_sub_cj = ci - cj
+
+    # compute term 1 :
+    Zij = pre['Zij'][i][j]
+    part1i = (BiSi @ Bi.T @ BiSi) - (BiSi @ Si)
+    part1j = (BjSj @ Bj.T @ BjSj) - (BjSj @ Sj)
+    part2i = (BjSj @ Bj.T @ BiSi) - (BjSj @ Zij.T @ Si)
+    part2j = (BiSi @ Bi.T @ BjSj) - (BiSi @ Zij   @ Sj)
+    dBi = (part1i + part2i) * 8
+    dBj = (part1j + part2j) * 8
+
+    # compute term 2 :
+    dci = ci*0
+    dcj = cj*0
+    if i != j:
+        # gradient part for B matrices
+        part3i = (np.outer(ci_sub_cj, (ci_sub_cj @ Bi)) - np.outer(ci_sub_cj, pre['mui_sub_muj_TUi'][i][j])) @ Si
+        part3j = (np.outer(ci_sub_cj, (ci_sub_cj @ Bj)) - np.outer(ci_sub_cj, pre['mui_sub_muj_TUj'][i][j])) @ Sj
+        dBi += 2*part3i
+        dBj += 2*part3j
+        # gradient part for c vectors
+        part4i = (pre['mui_sub_muj_TUi'][i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
+        part4j = (pre['mui_sub_muj_TUj'][i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
+        part4 = 2*(part4i+part4j)
+        dci -= part4
+        dcj += part4
+    return dBi, dBj, dci, dcj
 
 def main():
     n = 4
@@ -115,16 +162,27 @@ def main():
     lo_d = 2
 
     means = np.vstack([np.ones(d)*(i+1) for i in range(n)])
-    covs = np.vstack([np.eye(d)*(i+1) for i in range(n)])
+    covs = np.vstack([mk_cov_mat(d, i+1) for i in range(n)])
     normal_distr_spec = np.vstack([means, covs])
     constants = precalculate_constants(normal_distr_spec)
 
-    c = np.vstack([np.zeros(lo_d) for i in range(n)])
-    B = np.vstack([np.ones((d,lo_d)) for i in range(n)])
+    c = np.vstack([np.ones(lo_d)*(i+1) for i in range(n)])
+    B = np.vstack([np.ones((d,lo_d))*(i*0.1+0.1) for i in range(n)])
     affine_transforms = np.vstack([c,B])
 
-    s = stress_ij(normal_distr_spec, affine_transforms, constants, 1, 2)
+    s = stress_ij(1,2, normal_distr_spec, affine_transforms, constants)
+    g = gradient_ij(1,2, normal_distr_spec, affine_transforms, constants)
     print(s)
+    print(g)
+
+def mk_cov_mat(d, s):
+    a = np.array([i*s for i in range(d*d)])
+    a = a.reshape((d,d))
+    a = np.sqrt(a)
+    a = a - a.mean(axis=0)
+    cov = a.T @ a
+    return cov * (1/d)
+
 
 if __name__ == '__main__':
     main()
