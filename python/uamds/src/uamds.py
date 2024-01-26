@@ -127,7 +127,6 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: 
     return term1+term2+term3
 
 
-
 def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
@@ -227,13 +226,10 @@ def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc
     return sum
 
 
-def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: tuple=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
-
-    if precalc_constants is None:
-        precalc_constants = precalculate_constants(normal_distr_spec)
 
     # compute the gradients of all affine transforms
     grad = np.zeros(affine_transforms.shape)

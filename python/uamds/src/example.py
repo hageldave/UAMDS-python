@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pokemon
 import uamds
+import util
 
 
 def main():
@@ -21,21 +22,30 @@ def main():
     pre = uamds.precalculate_constants(distrib_spec)
     # perform UAMDS
     affine_transforms = uamds.iterate_simple_gradient_descent(
-        distrib_spec, affine_transforms, pre, num_iter=1000, a=0.0001)
+        distrib_spec, affine_transforms, pre, num_iter=20000, a=0.0001)
     # project distributions
     distrib_spec_lo = uamds.perform_projection(distrib_spec, affine_transforms)
     means_lo, covs_lo = uamds.get_means_covs(distrib_spec_lo)
-    # draw samples from projected distributions
+    plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
+
+
+def plot_2d_normal_distribs(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap):
+    n = len(means)
+    # draw samples from 2D normal distributions
     n_samples = 100
-    samples = np.vstack([np.random.multivariate_normal(means_lo[i], covs_lo[i], size=n_samples) for i in range(n)])
-    labels = [types[j] for j in range(n) for i in range(n_samples)]
+    samples = np.vstack([np.random.multivariate_normal(means[i], covs[i], size=n_samples) for i in range(n)])
+    sample_labels = [labels[j] for j in range(n) for i in range(n_samples)]
+    sample_colors = [colormap[label] for label in sample_labels]
     # make vis
-    colors_map = pokemon.get_type_colors()
-    colors = [colors_map[label] for label in labels]
-    plt.scatter(samples[:, 0], samples[:, 1], c=colors)
+    fig, ax = plt.subplots()  #figsize=(6, 6))
+    ax.scatter(samples[:, 0], samples[:, 1], c=sample_colors, s=2)
+    # confidence ellipses for each distribution
+    for i in range(n):
+        util.confidence_ellipse(means[i], covs[i], ax, n_std=1, edgecolor=colormap[labels[i]])
+        util.confidence_ellipse(means[i], covs[i], ax, n_std=2, edgecolor=colormap[labels[i]])
+        util.confidence_ellipse(means[i], covs[i], ax, n_std=3, edgecolor=colormap[labels[i]])
+
     plt.show()
-
-
 
 
 
