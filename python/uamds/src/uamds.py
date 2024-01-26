@@ -151,9 +151,30 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms
         # gradient part for c vectors
         part4i = (pre['mui_sub_muj_TUi'][i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
         part4j = (pre['mui_sub_muj_TUj'][i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
-        part4 = 2*(part4i+part4j)
-        dci -= part4
-        dcj += part4
+        part4 = -2*(part4i+part4j)
+        dci += part4
+        dcj -= part4
+
+    # compute term 3 :
+    norm1 = pre['norm2_mui_sub_muj'][i][j]
+    norm2 = np.dot(ci_sub_cj, ci_sub_cj)
+    part1 = norm1-norm2
+    part2 = part3 = 0.0
+    for k in range(d_hi):
+        sigma_i = Si[k, k]
+        sigma_j = Sj[k, k]
+        bik = Bi[:, k]
+        bjk = Bj[:, k]
+        part2 += (1 - np.dot(bik, bik)) * sigma_i
+        part3 += (1 - np.dot(bjk, bjk)) * sigma_j
+    term3 = -4 * (part1 + part2 + part3)
+    dBi += BiSi * term3
+    dBj += BjSj * term3
+
+    if i != j:
+        dci += ci_sub_cj * term3
+        dcj -= ci_sub_cj * term3
+
     return dBi, dBj, dci, dcj
 
 def main():
@@ -171,9 +192,12 @@ def main():
     affine_transforms = np.vstack([c,B])
 
     s = stress_ij(1,2, normal_distr_spec, affine_transforms, constants)
-    g = gradient_ij(1,2, normal_distr_spec, affine_transforms, constants)
+    dbi, dbj, dci, dcj = gradient_ij(1,2, normal_distr_spec, affine_transforms, constants)
     print(s)
-    print(g)
+    print(dbi)
+    print(dbj)
+    print(dci)
+    print(dcj)
 
 def mk_cov_mat(d, s):
     a = np.array([i*s for i in range(d*d)])
@@ -181,7 +205,8 @@ def mk_cov_mat(d, s):
     a = np.sqrt(a)
     a = a - a.mean(axis=0)
     cov = a.T @ a
-    return cov * (1/d)
+    #return cov * (1/d)
+    return np.eye(d) * s
 
 
 if __name__ == '__main__':
