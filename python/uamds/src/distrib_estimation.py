@@ -11,7 +11,7 @@ class MVN:
         return np.random.multivariate_normal(self.mean, self.cov, size=n)
 
     def __str__(self):
-        return f"MVN(mean={self.mean}, cov={self.cov})"
+        return f"MVN(mean={self.mean}, cov=\n{self.cov})\n"
 
     def __repr__(self):
         return self.__str__()
