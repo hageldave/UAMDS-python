@@ -20,7 +20,8 @@ def main():
     affine_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
     pre = uamds.precalculate_constants(distrib_spec)
     # perform UAMDS
-    affine_transforms = uamds.iterate_simple_gradient_descent(distrib_spec, affine_transforms, pre, num_iter=10000, a=0.0001)
+    affine_transforms = uamds.iterate_simple_gradient_descent(
+        distrib_spec, affine_transforms, pre, num_iter=1000, a=0.0001)
     # project distributions
     distrib_spec_lo = uamds.perform_projection(distrib_spec, affine_transforms)
     means_lo, covs_lo = uamds.get_means_covs(distrib_spec_lo)

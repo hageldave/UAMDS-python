@@ -1,7 +1,8 @@
 import numpy as np
+import numba as nb
 
 
-def precalculate_constants(normal_distr_spec: np.ndarray) -> dict:
+def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
     d_hi = normal_distr_spec.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi+1)  # array of (d_hi x d_hi) cov matrices and (1 x d_hi) means
 
@@ -22,34 +23,60 @@ def precalculate_constants(normal_distr_spec: np.ndarray) -> dict:
     mui_sub_muj_TUj = [[(mu[i]-mu[j]) @ U[j] for j in range(n)] for i in range(n)]
     Zij = [[U[i].T @ U[j] for j in range(n)] for i in range(n)]
 
-    constants = {
-        'mu': mu,
-        'cov': cov,
-        'U': U,
-        'S': S,
-        'Ssqrt': Ssqrt,
-        'norm2_mui_sub_muj': norm2_mui_sub_muj,
-        'Ssqrti_UiTUj_Ssqrtj': Ssqrti_UiTUj_Ssqrtj,
-        'mui_sub_muj_TUi': mui_sub_muj_TUi,
-        'mui_sub_muj_TUj': mui_sub_muj_TUj,
-        'Zij': Zij
-    }
+    # constants = {
+    #     'mu': mu,
+    #     'cov': cov,
+    #     'U': U,
+    #     'S': S,
+    #     'Ssqrt': Ssqrt,
+    #     'norm2_mui_sub_muj': norm2_mui_sub_muj,
+    #     'Ssqrti_UiTUj_Ssqrtj': Ssqrti_UiTUj_Ssqrtj,
+    #     'mui_sub_muj_TUi': mui_sub_muj_TUi,
+    #     'mui_sub_muj_TUj': mui_sub_muj_TUj,
+    #     'Zij': Zij
+    # }
+    constants = (
+        mu,
+        cov,
+        U,
+        S,
+        Ssqrt,
+        norm2_mui_sub_muj,
+        Ssqrti_UiTUj_Ssqrtj,
+        mui_sub_muj_TUi,
+        mui_sub_muj_TUj,
+        Zij
+    )
     return constants
 
 
-def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: dict) -> float:
+def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple) -> float:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
+    #  get constants
+    (
+        mu,
+        cov,
+        U,
+        S,
+        Ssqrt,
+        norm2_mui_sub_muj,
+        Ssqrti_UiTUj_Ssqrtj,
+        mui_sub_muj_TUi,
+        mui_sub_muj_TUj,
+        Zij
+    ) = pre
+
     # get some objects for i
-    Si = pre['S'][i]
-    Ssqrti = pre['Ssqrt'][i]
+    Si = S[i]
+    Ssqrti = Ssqrt[i]
     ci = affine_transforms[i, :]
     Bi = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
 
     # get some objects for j
-    Sj = pre['S'][j]
-    Ssqrtj = pre['Ssqrt'][j]
+    Sj = S[j]
+    Ssqrtj = Ssqrt[j]
     cj = affine_transforms[j, :]
     Bj = affine_transforms[n+j*d_hi : n+(j+1)*d_hi, :]
 
@@ -65,24 +92,24 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: 
     part2 = (temp*temp).sum()  # sum of squared elements = squared frobenius norm
     # compute term 1 : part 3
     temp = (Ssqrti @ Bi) @ (Bj.T @ Ssqrtj)  # outer product of transformed Bs
-    temp = pre['Ssqrti_UiTUj_Ssqrtj'][i][j] - temp
+    temp = Ssqrti_UiTUj_Ssqrtj[i][j] - temp
     part3 = (temp*temp).sum()  # sum of squared elements = squared frobenius norm
     term1 = 2*(part1+part2)+4*part3
 
     # compute term 2 : part 1 : sum_k^n [ Si_k * ( <Ui_k, mui-muj> - <Bi_k, ci-cj> )^2 ]
     temp = ci_sub_cj @ Bi.T
-    temp = pre['mui_sub_muj_TUi'][i][j] - temp
+    temp = mui_sub_muj_TUi[i][j] - temp
     temp = temp*temp  # squared
     part1 = (temp @ Si).sum()
     # compute term 2 : part 2 : same as part 1 but with j
     temp = ci_sub_cj @ Bj.T
-    temp = pre['mui_sub_muj_TUj'][i][j] - temp
+    temp = mui_sub_muj_TUj[i][j] - temp
     temp = temp*temp  # squared
     part2 = (temp @ Sj).sum()
     term2 = part1+part2
 
     # compute term 3 : part 1
-    norm1 = pre['norm2_mui_sub_muj'][i][j]
+    norm1 = norm2_mui_sub_muj[i][j]
     norm2 = np.dot(ci_sub_cj,ci_sub_cj)  # squared norm
     part1 = norm1-norm2
     # compute term 3 : part 2
@@ -100,21 +127,36 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: 
     return term1+term2+term3
 
 
-def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: dict) -> np.ndarray:
+
+def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
+    #  get constants
+    (
+        mu,
+        cov,
+        U,
+        S,
+        Ssqrt,
+        norm2_mui_sub_muj,
+        Ssqrti_UiTUj_Ssqrtj,
+        mui_sub_muj_TUi,
+        mui_sub_muj_TUj,
+        Z
+    ) = pre
+
     # get some objects for i
-    Si = pre['S'][i]
-    mui = pre['mu'][i]
+    Si = S[i]
+    mui = mu[i]
     ci = affine_transforms[i, :]
     Bi = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T
     BiSi = Bi @ Si
 
 
     # get some objects for j
-    Sj = pre['S'][j]
-    muj = pre['mu'][j]
+    Sj = S[j]
+    muj = mu[j]
     cj = affine_transforms[j, :]
     Bj = affine_transforms[n+j*d_hi : n+(j+1)*d_hi, :].T
     BjSj = Bj @ Sj
@@ -123,7 +165,7 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms
     ci_sub_cj = ci - cj
 
     # compute term 1 :
-    Zij = pre['Zij'][i][j]
+    Zij = Z[i][j]
     part1i = (BiSi @ Bi.T @ BiSi) - (BiSi @ Si)
     part1j = (BjSj @ Bj.T @ BjSj) - (BjSj @ Sj)
     part2i = (BjSj @ Bj.T @ BiSi) - (BjSj @ Zij.T @ Si)
@@ -132,23 +174,23 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms
     dBj = (part1j + part2j) * 8
 
     # compute term 2 :
-    dci = ci*0
-    dcj = cj*0
+    dci = np.zeros(ci.shape)
+    dcj = np.zeros(cj.shape)
     if i != j:
         # gradient part for B matrices
-        part3i = (np.outer(ci_sub_cj, (ci_sub_cj @ Bi)) - np.outer(ci_sub_cj, pre['mui_sub_muj_TUi'][i][j])) @ Si
-        part3j = (np.outer(ci_sub_cj, (ci_sub_cj @ Bj)) - np.outer(ci_sub_cj, pre['mui_sub_muj_TUj'][i][j])) @ Sj
+        part3i = (np.outer(ci_sub_cj, (ci_sub_cj @ Bi)) - np.outer(ci_sub_cj, mui_sub_muj_TUi[i][j])) @ Si
+        part3j = (np.outer(ci_sub_cj, (ci_sub_cj @ Bj)) - np.outer(ci_sub_cj, mui_sub_muj_TUj[i][j])) @ Sj
         dBi += 2*part3i
         dBj += 2*part3j
         # gradient part for c vectors
-        part4i = (pre['mui_sub_muj_TUi'][i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
-        part4j = (pre['mui_sub_muj_TUj'][i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
+        part4i = (mui_sub_muj_TUi[i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
+        part4j = (mui_sub_muj_TUj[i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
         part4 = -2*(part4i+part4j)
         dci += part4
         dcj -= part4
 
     # compute term 3 :
-    norm1 = pre['norm2_mui_sub_muj'][i][j]
+    norm1 = norm2_mui_sub_muj[i][j]
     norm2 = np.dot(ci_sub_cj, ci_sub_cj)
     part1 = norm1-norm2
     part2 = part3 = 0.0
@@ -170,7 +212,7 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms
     return dBi.T, dBj.T, dci, dcj
 
 
-def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: dict=None) -> float:
+def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: tuple=None) -> float:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0]//(d_hi+1)  # array of (d_hi x d_hi) cov matrices and (1 x d_hi) means
@@ -185,7 +227,7 @@ def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc
     return sum
 
 
-def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: dict=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: tuple=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
@@ -210,7 +252,7 @@ def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, preca
 def iterate_simple_gradient_descent(
         normal_distr_spec: np.ndarray,
         affine_transforms_init: np.ndarray,
-        precalc_constants: dict = None,
+        precalc_constants: tuple = None,
         num_iter: int = 10,
         a: float = 0.0001
 ) -> np.ndarray:
