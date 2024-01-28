@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy
 import pokemon
 import uamds
 import util
@@ -20,6 +21,9 @@ def main():
     lo_d = 2
     affine_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
     pre = uamds.precalculate_constants(distrib_spec)
+    # test plausibility of gradient against stress
+    check_gradient(distrib_spec, affine_transforms, pre)
+
     # perform UAMDS
     affine_transforms = uamds.iterate_simple_gradient_descent(
         distrib_spec, affine_transforms, pre, num_iter=10000, a=0.0001)
@@ -27,6 +31,21 @@ def main():
     distrib_spec_lo = uamds.perform_projection(distrib_spec, affine_transforms)
     means_lo, covs_lo = uamds.get_means_covs(distrib_spec_lo)
     plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
+
+
+
+def check_gradient(distrib_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple):
+    x_shape = affine_transforms.shape
+    n_elems = affine_transforms.size
+
+    def fx(x: np.ndarray):
+        return uamds.stress(distrib_spec, x.reshape(x_shape), pre)
+
+    def dfx(x: np.ndarray):
+        return uamds.gradient(distrib_spec, x.reshape(x_shape), pre).reshape(n_elems)
+
+    err = scipy.optimize.check_grad(fx, dfx, affine_transforms.reshape(affine_transforms.size))
+    print(f"gradient approximation error: {err}")
 
 
 def plot_2d_normal_distribs(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap):
