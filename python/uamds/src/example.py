@@ -25,13 +25,20 @@ def main1():
     uamds_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
     # test plausibility of gradient implemenentation against stress
     check_gradient(distrib_spec, uamds_transforms, pre)
-    # perform UAMDS
-    uamds_transforms = uamds.iterate_simple_gradient_descent(
-        distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.0001)
-    # project distributions
-    distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
-    means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
-    plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors())
+    # perform UAMDS over and over again
+    n_repetitions = 10000
+    with plt.ion():
+        fig = ax = None
+        for rep in range(n_repetitions):
+            uamds_transforms = uamds.iterate_simple_gradient_descent(
+                distrib_spec, uamds_transforms, pre, num_iter=100, a=0.0001)
+            # project distributions
+            distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
+            means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
+            if ax is not None:
+                ax.clear()
+            fig, ax = plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors(), fig=fig, ax=ax)
+            plt.pause(0.1)
 
 
 def main2():
@@ -91,10 +98,11 @@ def check_gradient(distrib_spec: np.ndarray, uamds_transforms: np.ndarray, pre: 
     print(f"gradient approximation error: {err}")
 
 
-def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap):
+def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap, fig=None, ax=None):
     n = len(means)
     # make vis
-    fig, ax = plt.subplots(figsize=(4, 4))
+    if fig is None or ax is None:
+        fig, ax = plt.subplots(figsize=(4, 4))
     ax.axis('equal')
     colors = [colormap[label] for label in labels]
     ax.scatter(np.vstack(means)[:,0], np.vstack(means)[:,1], c=colors, s=2)
@@ -103,8 +111,7 @@ def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray]
         util.confidence_ellipse(means[i], covs[i], ax, n_std=1, edgecolor=colormap[labels[i]])
         util.confidence_ellipse(means[i], covs[i], ax, n_std=2, edgecolor=colormap[labels[i]])
         util.confidence_ellipse(means[i], covs[i], ax, n_std=3, edgecolor=colormap[labels[i]])
-
-    plt.show()
+    return fig, ax
 
 
 def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap, n_samples: int=100):
@@ -121,7 +128,7 @@ def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray],
 
 
 if __name__ == '__main__':
-    main2()
+    main1()
 
 
 
