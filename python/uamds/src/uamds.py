@@ -277,7 +277,7 @@ def convert_xform_uamds_to_affine(normal_distr_spec: np.ndarray, uamds_transform
         mu_hi = normal_distr_spec[i, :]
         B = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
         cov_hi = normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :]
-        U = np.diag(np.linalg.svd(cov_hi, full_matrices=True).U)
+        U = np.linalg.svd(cov_hi, full_matrices=True).U
         P = U @ B
         t = mu_lo - (mu_hi @ P)
         translations.append(t)
@@ -287,7 +287,7 @@ def convert_xform_uamds_to_affine(normal_distr_spec: np.ndarray, uamds_transform
 
 def convert_xform_affine_to_uamds(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = uamds_transforms.shape[1]
+    d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
 
     mus_lo = []
@@ -297,7 +297,7 @@ def convert_xform_affine_to_uamds(normal_distr_spec: np.ndarray, affine_transfor
         mu_hi = normal_distr_spec[i, :]
         P = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
         cov_hi = normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :]
-        U = np.diag(np.linalg.svd(cov_hi, full_matrices=True).U)
+        U = np.linalg.svd(cov_hi, full_matrices=True).U
         B = U.T @ P
         mu_lo = (mu_hi @ P) + t
         mus_lo.append(mu_lo)

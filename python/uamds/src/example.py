@@ -7,7 +7,7 @@ import util
 import uapca
 
 
-def main():
+def main1():
     pokemon_distribs = pokemon.get_normal_distribs()
     # get first 9 pokemon (1st gen starters)
     n = 9
@@ -15,14 +15,9 @@ def main():
     types = pokemon.get_type1()[0:n]
     means_hi = [d.mean for d in distrib_set]
     covs_hi = [d.cov for d in distrib_set]
-
     # prepare data matrix consisting of a block of means followed by a block of covs
     distrib_spec = util.mk_normal_distr_spec(means_hi, covs_hi)
-    # compute UAPCA projection
-    uapca_means, uapca_covs = uapca.transform_uapca(distrib_spec[0:n, :], distrib_spec[n:, :])
-    uapca_means, uapca_covs = util.get_means_covs(np.vstack([uapca_means, uapca_covs]))
-    plot_2d_normal_distribs(uapca_means, uapca_covs, types, pokemon.get_type_colors())
-
+    # dimensionality and precomputation for UAMDS
     hi_d = distrib_spec.shape[1]
     lo_d = 2
     pre = uamds.precalculate_constants(distrib_spec)
@@ -38,6 +33,34 @@ def main():
     means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
     plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
 
+
+def main2():
+    pokemon_distribs = pokemon.get_normal_distribs()
+    # get first 9 pokemon (1st gen starters)
+    n = 9
+    distrib_set = pokemon_distribs[0:n]
+    types = pokemon.get_type1()[0:n]
+    means_hi = [d.mean for d in distrib_set]
+    covs_hi = [d.cov for d in distrib_set]
+    # prepare data matrix consisting of a block of means followed by a block of covs
+    distrib_spec = util.mk_normal_distr_spec(means_hi, covs_hi)
+    # compute UAPCA projection
+    eigvecs, eigvals = uapca.compute_uapca(distrib_spec[0:n, :], distrib_spec[n:, :])
+    projmat = eigvecs[:,:2]
+    # create initialization for UAMDS from UAPCA (each distribution has translation 0 and the same projection matrix)
+    translations = np.zeros((n,2))
+    projection_mats = np.vstack([projmat for i in range(n)])
+    affine_transforms = np.vstack([translations, projection_mats])
+    uamds_transforms = uamds.convert_xform_affine_to_uamds(distrib_spec, affine_transforms)
+    # perform UAMDS
+    pre = uamds.precalculate_constants(distrib_spec)
+    uamds_transforms = uamds.iterate_simple_gradient_descent(
+        distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.0001)
+    # project distributions
+    distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
+    means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
+    plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
+    
 
 
 def check_gradient(distrib_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple):
@@ -76,7 +99,7 @@ def plot_2d_normal_distribs(means: list[np.ndarray], covs: list[np.ndarray], lab
 
 
 if __name__ == '__main__':
-    main()
+    main2()
 
 
 
