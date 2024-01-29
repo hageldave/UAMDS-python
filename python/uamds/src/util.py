@@ -97,3 +97,20 @@ def confidence_ellipse(mean, cov, ax, n_std=3.0, facecolor='none', **kwargs):
 
     ellipse.set_transform(transf + ax.transData)
     return ax.add_patch(ellipse)
+
+
+def get_means_covs(normal_distr_spec: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    d_hi = normal_distr_spec.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+    means = []
+    covs = []
+    for i in range(n):
+        means.append(normal_distr_spec[i, :])
+        covs.append(normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :])
+    return means, covs
+
+
+def mk_normal_distr_spec(means: list[np.ndarray], covs: list[np.ndarray]) -> np.ndarray:
+    mean_block = np.vstack(means)
+    cov_block = np.vstack(covs)
+    return np.vstack([mean_block, cov_block])

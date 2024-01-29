@@ -1,5 +1,6 @@
 import numpy as np
-import numba as nb
+
+from src.util import mk_normal_distr_spec
 
 
 def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
@@ -264,23 +265,6 @@ def iterate_simple_gradient_descent(
     return affine_transforms
 
 
-def mk_normal_distr_spec(means: list[np.ndarray], covs: list[np.ndarray]) -> np.ndarray:
-    mean_block = np.vstack(means)
-    cov_block = np.vstack(covs)
-    return np.vstack([mean_block, cov_block])
-
-
-def get_means_covs(normal_distr_spec: np.ndarray) -> tuple[list[np.ndarray], list[np.ndarray]]:
-    d_hi = normal_distr_spec.shape[1]
-    n = normal_distr_spec.shape[0] // (d_hi + 1)
-    means = []
-    covs = []
-    for i in range(n):
-        means.append(normal_distr_spec[i, :])
-        covs.append(normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :])
-    return means, covs
-
-
 def perform_projection(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
     d_lo = affine_transforms.shape[1]
@@ -332,6 +316,8 @@ def main():
     print(stress(normal_distr_spec, affine_transforms, constants))
     affine_transforms = iterate_simple_gradient_descent(normal_distr_spec, affine_transforms, constants, num_iter=100, a=0.000001)
     print(stress(normal_distr_spec, affine_transforms, constants))
+
+
 
 
 

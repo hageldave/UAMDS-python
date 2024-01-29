@@ -4,6 +4,7 @@ import scipy
 import pokemon
 import uamds
 import util
+import uapca
 
 
 def main():
@@ -15,21 +16,26 @@ def main():
     means_hi = [d.mean for d in distrib_set]
     covs_hi = [d.cov for d in distrib_set]
 
-    # prepare for uamds
-    distrib_spec = uamds.mk_normal_distr_spec(means_hi, covs_hi)
+    # prepare data matrix consisting of a block of means followed by a block of covs
+    distrib_spec = util.mk_normal_distr_spec(means_hi, covs_hi)
+    # compute UAPCA projection
+    uapca_means, uapca_covs = uapca.transform_uapca(distrib_spec[0:n, :], distrib_spec[n:, :])
+    uapca_means, uapca_covs = util.get_means_covs(np.vstack([uapca_means, uapca_covs]))
+    plot_2d_normal_distribs(uapca_means, uapca_covs, types, pokemon.get_type_colors())
+
     hi_d = distrib_spec.shape[1]
     lo_d = 2
-    affine_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
     pre = uamds.precalculate_constants(distrib_spec)
-    # test plausibility of gradient against stress
+    # random initialization
+    affine_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
+    # test plausibility of gradient implemenentation against stress
     check_gradient(distrib_spec, affine_transforms, pre)
-
     # perform UAMDS
     affine_transforms = uamds.iterate_simple_gradient_descent(
         distrib_spec, affine_transforms, pre, num_iter=10000, a=0.0001)
     # project distributions
     distrib_spec_lo = uamds.perform_projection(distrib_spec, affine_transforms)
-    means_lo, covs_lo = uamds.get_means_covs(distrib_spec_lo)
+    means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
     plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
 
 
