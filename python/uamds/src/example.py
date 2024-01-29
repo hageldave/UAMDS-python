@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import scipy
 import pokemon
@@ -10,7 +11,7 @@ import uapca
 def main1():
     pokemon_distribs = pokemon.get_normal_distribs()
     # get first 9 pokemon (1st gen starters)
-    n = 9
+    n = 15
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
     means_hi = [d.mean for d in distrib_set]
@@ -27,6 +28,7 @@ def main1():
     check_gradient(distrib_spec, uamds_transforms, pre)
     # perform UAMDS over and over again
     n_repetitions = 10000
+    matplotlib.use("TkAgg") # may require on linux: sudo apt-get install python3-tk
     with plt.ion():
         fig = ax = None
         for rep in range(n_repetitions):
