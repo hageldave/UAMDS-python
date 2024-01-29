@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.util import mk_normal_distr_spec
+from util import mk_normal_distr_spec
 
 
 def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:

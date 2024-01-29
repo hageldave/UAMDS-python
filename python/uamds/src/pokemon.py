@@ -4,7 +4,7 @@ import distrib_estimation as db_est
 
 
 def get_raw_data() -> pd.DataFrame:
-    return pd.read_csv("res/pokemon_stats.csv", delimiter=";")
+    return pd.read_csv("src/res/pokemon_stats.csv", delimiter=";")
 
 
 def get_normal_distribs() -> list[db_est.MVN]:
