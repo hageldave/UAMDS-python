@@ -31,7 +31,7 @@ def main1():
     # project distributions
     distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
     means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
-    plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
+    plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors())
 
 
 def main2():
@@ -44,6 +44,8 @@ def main2():
     covs_hi = [d.cov for d in distrib_set]
     # prepare data matrix consisting of a block of means followed by a block of covs
     distrib_spec = util.mk_normal_distr_spec(means_hi, covs_hi)
+    hi_d = distrib_spec.shape[1]
+    lo_d = 2
     # compute UAPCA projection
     eigvecs, eigvals = uapca.compute_uapca(distrib_spec[0:n, :], distrib_spec[n:, :])
     projmat = eigvecs[:,:2]
@@ -56,10 +58,22 @@ def main2():
     pre = uamds.precalculate_constants(distrib_spec)
     uamds_transforms = uamds.iterate_simple_gradient_descent(
         distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.0001)
-    # project distributions
-    distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
-    means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
-    plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
+    # project high dimensional samples
+    n_samples = 500
+    samples = [np.random.multivariate_normal(distrib_set[i].mean, distrib_set[i].cov, size=n_samples) for i in range(n)]
+    affine_transforms = uamds.convert_xform_uamds_to_affine(distrib_spec, uamds_transforms)
+    translations = affine_transforms[:n,:]
+    projection_mats = affine_transforms[n:,:]
+    projected_samples = [samples[i] @ projection_mats[i*hi_d:(i+1)*hi_d,:] + translations[i,:] for i in range(n)]
+    # show samples
+    labels = types
+    colormap = pokemon.get_type_colors()
+    sample_labels = [labels[j] for j in range(n) for i in range(n_samples)]
+    sample_colors = [colormap[label] for label in sample_labels]
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.axis('equal')
+    ax.scatter(np.vstack(projected_samples)[:, 0], np.vstack(projected_samples)[:, 1], c=sample_colors, s=2)
+    plt.show()
     
 
 
@@ -77,17 +91,13 @@ def check_gradient(distrib_spec: np.ndarray, uamds_transforms: np.ndarray, pre: 
     print(f"gradient approximation error: {err}")
 
 
-def plot_2d_normal_distribs(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap):
+def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap):
     n = len(means)
-    # draw samples from 2D normal distributions
-    n_samples = 100
-    samples = np.vstack([np.random.multivariate_normal(means[i], covs[i], size=n_samples) for i in range(n)])
-    sample_labels = [labels[j] for j in range(n) for i in range(n_samples)]
-    sample_colors = [colormap[label] for label in sample_labels]
     # make vis
     fig, ax = plt.subplots(figsize=(4, 4))
     ax.axis('equal')
-    ax.scatter(samples[:, 0], samples[:, 1], c=sample_colors, s=2)
+    colors = [colormap[label] for label in labels]
+    ax.scatter(np.vstack(means)[:,0], np.vstack(means)[:,1], c=colors, s=2)
     # confidence ellipses for each distribution
     for i in range(n):
         util.confidence_ellipse(means[i], covs[i], ax, n_std=1, edgecolor=colormap[labels[i]])
@@ -95,6 +105,18 @@ def plot_2d_normal_distribs(means: list[np.ndarray], covs: list[np.ndarray], lab
         util.confidence_ellipse(means[i], covs[i], ax, n_std=3, edgecolor=colormap[labels[i]])
 
     plt.show()
+
+
+def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap, n_samples: int=100):
+    n = len(means)
+    # draw samples from 2D normal distributions
+    samples = np.vstack([np.random.multivariate_normal(means[i], covs[i], size=n_samples) for i in range(n)])
+    sample_labels = [labels[j] for j in range(n) for i in range(n_samples)]
+    sample_colors = [colormap[label] for label in sample_labels]
+    # make vis
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.axis('equal')
+    ax.scatter(samples[:, 0], samples[:, 1], c=sample_colors, s=2)
 
 
 
