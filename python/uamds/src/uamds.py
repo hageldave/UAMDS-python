@@ -51,9 +51,9 @@ def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
     return constants
 
 
-def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple) -> float:
+def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple) -> float:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = affine_transforms.shape[1]
+    d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
     #  get constants
     (
@@ -72,14 +72,14 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: 
     # get some objects for i
     Si = S[i]
     Ssqrti = Ssqrt[i]
-    ci = affine_transforms[i, :]
-    Bi = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
+    ci = uamds_transforms[i, :]
+    Bi = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
 
     # get some objects for j
     Sj = S[j]
     Ssqrtj = Ssqrt[j]
-    cj = affine_transforms[j, :]
-    Bj = affine_transforms[n+j*d_hi : n+(j+1)*d_hi, :]
+    cj = uamds_transforms[j, :]
+    Bj = uamds_transforms[n+j*d_hi : n+(j+1)*d_hi, :]
 
     ci_sub_cj = ci-cj
 
@@ -128,9 +128,9 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: 
     return term1+term2+term3
 
 
-def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple) -> np.ndarray:
+def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = affine_transforms.shape[1]
+    d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
     #  get constants
     (
@@ -149,16 +149,16 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms
     # get some objects for i
     Si = S[i]
     mui = mu[i]
-    ci = affine_transforms[i, :]
-    Bi = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T
+    ci = uamds_transforms[i, :]
+    Bi = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T
     BiSi = Bi @ Si
 
 
     # get some objects for j
     Sj = S[j]
     muj = mu[j]
-    cj = affine_transforms[j, :]
-    Bj = affine_transforms[n+j*d_hi : n+(j+1)*d_hi, :].T
+    cj = uamds_transforms[j, :]
+    Bj = uamds_transforms[n+j*d_hi : n+(j+1)*d_hi, :].T
     BjSj = Bj @ Sj
 
     mui_sub_muj = mui - muj
@@ -212,9 +212,9 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, affine_transforms
     return dBi.T, dBj.T, dci, dcj
 
 
-def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: tuple=None) -> float:
+def stress(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_constants: tuple=None) -> float:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = affine_transforms.shape[1]
+    d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0]//(d_hi+1)  # array of (d_hi x d_hi) cov matrices and (1 x d_hi) means
 
     if precalc_constants is None:
@@ -223,20 +223,20 @@ def stress(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc
     sum = 0
     for i in range(n):
         for j in range(i, n):
-            sum += stress_ij(i, j, normal_distr_spec, affine_transforms, precalc_constants)
+            sum += stress_ij(i, j, normal_distr_spec, uamds_transforms, precalc_constants)
     return sum
 
 
-def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, precalc_constants: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def gradient(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_constants: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = affine_transforms.shape[1]
+    d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
 
     # compute the gradients of all affine transforms
-    grad = np.zeros(affine_transforms.shape)
+    grad = np.zeros(uamds_transforms.shape)
     for i in range(n):
         for j in range(i, n):
-            dBi, dBj, dci, dcj = gradient_ij(i, j, normal_distr_spec, affine_transforms, precalc_constants)
+            dBi, dBj, dci, dcj = gradient_ij(i, j, normal_distr_spec, uamds_transforms, precalc_constants)
             # c gradients on top part of matrix
             grad[i, :] += dci
             grad[j, :] += dcj
@@ -248,7 +248,7 @@ def gradient(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray, preca
 
 def iterate_simple_gradient_descent(
         normal_distr_spec: np.ndarray,
-        affine_transforms_init: np.ndarray,
+        uamds_transforms_init: np.ndarray,
         precalc_constants: tuple = None,
         num_iter: int = 10,
         a: float = 0.0001
@@ -258,24 +258,64 @@ def iterate_simple_gradient_descent(
         precalc_constants = precalculate_constants(normal_distr_spec)
 
     # gradient descent
-    affine_transforms = affine_transforms_init
+    uamds_transforms = uamds_transforms_init
     for i in range(num_iter):
-        grad = gradient(normal_distr_spec, affine_transforms, precalc_constants)
-        affine_transforms -= grad * a
-    return affine_transforms
+        grad = gradient(normal_distr_spec, uamds_transforms, precalc_constants)
+        uamds_transforms -= grad * a
+    return uamds_transforms
 
 
-def perform_projection(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray) -> np.ndarray:
+def convert_xform_uamds_to_affine(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = affine_transforms.shape[1]
+    d_lo = uamds_transforms.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+
+    translations = []
+    projections = []
+    for i in range(n):
+        mu_lo = uamds_transforms[i, :]
+        mu_hi = normal_distr_spec[i, :]
+        B = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
+        cov_hi = normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :]
+        U = np.diag(np.linalg.svd(cov_hi, full_matrices=True).U)
+        P = U @ B
+        t = mu_lo - (mu_hi @ P)
+        translations.append(t)
+        projections.append(P)
+    return np.vstack([np.vstack(translations), np.vstack(projections)])
+        
+
+def convert_xform_affine_to_uamds(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray) -> np.ndarray:
+    d_hi = normal_distr_spec.shape[1]
+    d_lo = uamds_transforms.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+
+    mus_lo = []
+    Bs = []
+    for i in range(n):
+        t = affine_transforms[i, :]
+        mu_hi = normal_distr_spec[i, :]
+        P = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
+        cov_hi = normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :]
+        U = np.diag(np.linalg.svd(cov_hi, full_matrices=True).U)
+        B = U.T @ P
+        mu_lo = (mu_hi @ P) + t
+        mus_lo.append(mu_lo)
+        Bs.append(B)
+    return np.vstack([np.vstack(mus_lo), np.vstack(Bs)])
+
+
+def perform_projection(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray) -> np.ndarray:
+    d_hi = normal_distr_spec.shape[1]
+    d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
 
     mus = []
     covs = []
     for i in range(n):
-        mu_lo = affine_transforms[i, :]
+        mu_lo = uamds_transforms[i, :]
         cov_hi = normal_distr_spec[n+i*d_hi : n+(i+1)*d_hi, :]
-        B = affine_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
+        B = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :]
         S = np.diag(np.linalg.svd(cov_hi, full_matrices=True).S)
         cov_lo = B.T @ S @ B
         mus.append(mu_lo)
@@ -298,24 +338,24 @@ def main():
 
     c = np.vstack([np.ones(lo_d)*(i+1) for i in range(n)])
     B = np.vstack([np.ones((d,lo_d))*(i*0.1+0.1) for i in range(n)])
-    affine_transforms = np.vstack([c,B])
+    uamds_transforms = np.vstack([c,B])
 
-    s = stress_ij(1,2, normal_distr_spec, affine_transforms, constants)
-    dbi, dbj, dci, dcj = gradient_ij(1,2, normal_distr_spec, affine_transforms, constants)
+    s = stress_ij(1,2, normal_distr_spec, uamds_transforms, constants)
+    dbi, dbj, dci, dcj = gradient_ij(1,2, normal_distr_spec, uamds_transforms, constants)
     print(s)
     print(dbi)
     print(dbj)
     print(dci)
     print(dcj)
-    print(stress(normal_distr_spec, affine_transforms, constants))
-    affine_transforms = iterate_simple_gradient_descent(normal_distr_spec, affine_transforms, constants, a=0.000001)
-    print(stress(normal_distr_spec, affine_transforms, constants))
-    affine_transforms = iterate_simple_gradient_descent(normal_distr_spec, affine_transforms, constants, a=0.000001)
-    print(stress(normal_distr_spec, affine_transforms, constants))
-    affine_transforms = iterate_simple_gradient_descent(normal_distr_spec, affine_transforms, constants, a=0.000001)
-    print(stress(normal_distr_spec, affine_transforms, constants))
-    affine_transforms = iterate_simple_gradient_descent(normal_distr_spec, affine_transforms, constants, num_iter=100, a=0.000001)
-    print(stress(normal_distr_spec, affine_transforms, constants))
+    print(stress(normal_distr_spec, uamds_transforms, constants))
+    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, a=0.000001)
+    print(stress(normal_distr_spec, uamds_transforms, constants))
+    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, a=0.000001)
+    print(stress(normal_distr_spec, uamds_transforms, constants))
+    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, a=0.000001)
+    print(stress(normal_distr_spec, uamds_transforms, constants))
+    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, num_iter=100, a=0.000001)
+    print(stress(normal_distr_spec, uamds_transforms, constants))
 
 
 

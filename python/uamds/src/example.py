@@ -27,22 +27,22 @@ def main():
     lo_d = 2
     pre = uamds.precalculate_constants(distrib_spec)
     # random initialization
-    affine_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
+    uamds_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
     # test plausibility of gradient implemenentation against stress
-    check_gradient(distrib_spec, affine_transforms, pre)
+    check_gradient(distrib_spec, uamds_transforms, pre)
     # perform UAMDS
-    affine_transforms = uamds.iterate_simple_gradient_descent(
-        distrib_spec, affine_transforms, pre, num_iter=1000, a=0.0001)
+    uamds_transforms = uamds.iterate_simple_gradient_descent(
+        distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.0001)
     # project distributions
-    distrib_spec_lo = uamds.perform_projection(distrib_spec, affine_transforms)
+    distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
     means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
     plot_2d_normal_distribs(means_lo, covs_lo, types, pokemon.get_type_colors())
 
 
 
-def check_gradient(distrib_spec: np.ndarray, affine_transforms: np.ndarray, pre: tuple):
-    x_shape = affine_transforms.shape
-    n_elems = affine_transforms.size
+def check_gradient(distrib_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple):
+    x_shape = uamds_transforms.shape
+    n_elems = uamds_transforms.size
 
     def fx(x: np.ndarray):
         return uamds.stress(distrib_spec, x.reshape(x_shape), pre)
@@ -50,7 +50,7 @@ def check_gradient(distrib_spec: np.ndarray, affine_transforms: np.ndarray, pre:
     def dfx(x: np.ndarray):
         return uamds.gradient(distrib_spec, x.reshape(x_shape), pre).reshape(n_elems)
 
-    err = scipy.optimize.check_grad(fx, dfx, affine_transforms.reshape(affine_transforms.size))
+    err = scipy.optimize.check_grad(fx, dfx, uamds_transforms.reshape(uamds_transforms.size))
     print(f"gradient approximation error: {err}")
 
 
