@@ -1,0 +1,53 @@
+# n iter = 100
+# start measuring after n = 1
+# no parallel or fastmath (parallel makes it significantly slower)
+
+# run with numba on gradient_ij and copying
+gradient approximation error: 0.00018173754242008748
+start at: 1706625860094220.2ms
+end: 1706625906831758100ns
+elapsed: 46.7375379s
+done
+
+# run with numba on gradient_ij and no copying
+gradient approximation error: 0.00019989847047574666
+start at: 1706626008678523.0ms
+end: 1706626076351209900ns
+elapsed: 67.6726869s
+done
+
+# run without numba and no copying (original solution)
+gradient approximation error: 0.0002110922640644986
+start at: 1706626154162933.5ms
+end: 1706626462884542400ns
+elapsed: 308.7216089s
+done
+
+# run without numba and copying (original solution with copying)
+gradient approximation error: 0.00021581602947227322
+start at: 1706626535509091.5ms
+end: 1706626830559680300ns
+elapsed: 295.0505888s
+done
+
+# run with numba on gradient_ij and gradient_numba without copying
+gradient approximation error: 0.0001407022023080084
+start at: 1706627112472123.0ms
+end: 1706627152512056900ns
+elapsed: 40.0399339s
+done
+
+# run with numba on gradient_ij and gradient_numba with copying (probably quickest solution)
+gradient approximation error: 0.00018491782902878447
+start at: 1706627217505477.0ms
+end: 1706627253398432400ns
+elapsed: 35.8929553s
+done
+
+same with fastmath:
+gradient approximation error: 0.00018768132169447678
+start at: 1706627715334956.8ms
+end: 1706627753474854200ns
+elapsed: 38.1398975s
+done
+

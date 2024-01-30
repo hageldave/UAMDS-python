@@ -6,6 +6,7 @@ import pokemon
 import uamds
 import util
 import uapca
+import time
 
 
 def main1():
@@ -27,20 +28,32 @@ def main1():
     # test plausibility of gradient implemenentation against stress
     check_gradient(distrib_spec, uamds_transforms, pre)
     # perform UAMDS over and over again
-    n_repetitions = 10000
-    matplotlib.use("TkAgg") # may require on linux: sudo apt-get install python3-tk
-    with plt.ion():
-        fig = ax = None
+    n_repetitions = 3
+    #matplotlib.use("TkAgg")  # may require on linux: sudo apt-get install python3-tk
+    #with plt.ion():
+    start = 0
+    if True:
+        # fig = ax = None
         for rep in range(n_repetitions):
+            if rep == 1:
+                start = time.time_ns()
+                print(f"start at: {start / 1000}ms")
             uamds_transforms = uamds.iterate_simple_gradient_descent(
                 distrib_spec, uamds_transforms, pre, num_iter=100, a=0.0001)
             # project distributions
             distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
             means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
-            if ax is not None:
-                ax.clear()
-            fig, ax = plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors(), fig=fig, ax=ax)
-            plt.pause(0.1)
+            #if ax is not None:
+            #    ax.clear()
+            #fig, ax = plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors(), fig=fig, ax=ax)
+            #plt.pause(0.1)
+
+    end = time.time_ns()
+    print(f"end: {end}ns")
+
+    print(f"elapsed: {(end - start) / 1e9}s")
+
+    print("done")
 
 
 def main2():

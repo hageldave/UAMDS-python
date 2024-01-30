@@ -1,3 +1,4 @@
+import numba
 import numpy as np
 
 from util import mk_normal_distr_spec
@@ -40,13 +41,13 @@ def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
         mu,
         cov,
         U,
-        S,
+        np.stack(S),
         Ssqrt,
-        norm2_mui_sub_muj,
+        np.stack(norm2_mui_sub_muj),
         Ssqrti_UiTUj_Ssqrtj,
-        mui_sub_muj_TUi,
-        mui_sub_muj_TUj,
-        Zij
+        np.stack(mui_sub_muj_TUi),
+        np.stack(mui_sub_muj_TUj),
+        np.stack(Zij)
     )
     return constants
 
@@ -128,40 +129,27 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: n
     return term1+term2+term3
 
 
-def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple) -> np.ndarray:
+@numba.njit()
+def gradient_ij_nocopy(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray,
+                S, norm2_mui_sub_muj, mui_sub_muj_TUi, mui_sub_muj_TUj, Z) -> tuple:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = uamds_transforms.shape[1]
+    # d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
-    #  get constants
-    (
-        mu,
-        cov,
-        U,
-        S,
-        Ssqrt,
-        norm2_mui_sub_muj,
-        Ssqrti_UiTUj_Ssqrtj,
-        mui_sub_muj_TUi,
-        mui_sub_muj_TUj,
-        Z
-    ) = pre
-
     # get some objects for i
     Si = S[i]
-    mui = mu[i]
+    # mui = mu[i]
     ci = uamds_transforms[i, :]
     Bi = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T
     BiSi = Bi @ Si
 
-
     # get some objects for j
     Sj = S[j]
-    muj = mu[j]
+    # muj = mu[j]
     cj = uamds_transforms[j, :]
-    Bj = uamds_transforms[n+j*d_hi : n+(j+1)*d_hi, :].T
+    Bj = uamds_transforms[n+j*d_hi:n+(j+1)*d_hi, :].T
     BjSj = Bj @ Sj
 
-    mui_sub_muj = mui - muj
+    # mui_sub_muj = mui - muj
     ci_sub_cj = ci - cj
 
     # compute term 1 :
@@ -212,6 +200,80 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms:
     return dBi.T, dBj.T, dci, dcj
 
 
+# with copy
+@numba.njit()
+def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray,
+                S, norm2_mui_sub_muj, mui_sub_muj_TUi, mui_sub_muj_TUj, Z) -> tuple:
+    d_hi = normal_distr_spec.shape[1]
+    # d_lo = uamds_transforms.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+    # get some objects for i
+    Si = S[i].copy()
+    # mui = mu[i]
+    ci = uamds_transforms[i, :]
+    Bi = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T.copy()
+    BiSi = Bi @ Si
+
+    # get some objects for j
+    Sj = S[j].copy()
+    # muj = mu[j]
+    cj = uamds_transforms[j, :]
+    Bj = uamds_transforms[n+j*d_hi:n+(j+1)*d_hi, :].T.copy()
+    BjSj = Bj @ Sj
+
+    # mui_sub_muj = mui - muj
+    ci_sub_cj = ci - cj
+
+    # compute term 1 :
+    Zij = Z[i][j].copy()
+    BiT = Bi.T.copy()
+    BjT = Bj.T.copy()
+    part1i = (BiSi @ BiT @ BiSi) - (BiSi @ Si)
+    part1j = (BjSj @ BjT @ BjSj) - (BjSj @ Sj)
+    part2i = (BjSj @ BjT @ BiSi) - (BjSj @ Zij.T @ Si)
+    part2j = (BiSi @ BiT @ BjSj) - (BiSi @ Zij   @ Sj)
+    dBi = (part1i + part2i) * 8
+    dBj = (part1j + part2j) * 8
+
+    # compute term 2 :
+    dci = np.zeros(ci.shape)
+    dcj = np.zeros(cj.shape)
+    if i != j:
+        # gradient part for B matrices
+        part3i = (np.outer(ci_sub_cj, (ci_sub_cj @ Bi)) - np.outer(ci_sub_cj, mui_sub_muj_TUi[i][j])) @ Si
+        part3j = (np.outer(ci_sub_cj, (ci_sub_cj @ Bj)) - np.outer(ci_sub_cj, mui_sub_muj_TUj[i][j])) @ Sj
+        dBi += 2*part3i
+        dBj += 2*part3j
+        # gradient part for c vectors
+        part4i = (mui_sub_muj_TUi[i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
+        part4j = (mui_sub_muj_TUj[i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
+        part4 = -2*(part4i+part4j)
+        dci += part4
+        dcj -= part4
+
+    # compute term 3 :
+    norm1 = norm2_mui_sub_muj[i][j]
+    norm2 = np.dot(ci_sub_cj, ci_sub_cj)
+    part1 = norm1-norm2
+    part2 = part3 = 0.0
+    for k in range(d_hi):
+        sigma_i = Si[k, k]
+        sigma_j = Sj[k, k]
+        bik = Bi[:, k].copy()
+        bjk = Bj[:, k].copy()
+        part2 += (1 - np.dot(bik, bik)) * sigma_i
+        part3 += (1 - np.dot(bjk, bjk)) * sigma_j
+    term3 = -4 * (part1 + part2 + part3)
+    dBi += BiSi * term3
+    dBj += BjSj * term3
+
+    if i != j:
+        dci += ci_sub_cj * term3
+        dcj -= ci_sub_cj * term3
+
+    return dBi.T, dBj.T, dci, dcj
+
+
 def stress(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_constants: tuple=None) -> float:
     d_hi = normal_distr_spec.shape[1]
     d_lo = uamds_transforms.shape[1]
@@ -227,23 +289,40 @@ def stress(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_
     return sum
 
 
-def gradient(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_constants: tuple) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    d_hi = normal_distr_spec.shape[1]
-    d_lo = uamds_transforms.shape[1]
-    n = normal_distr_spec.shape[0] // (d_hi + 1)
-
+@numba.njit()
+def gradient_numba(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, S, norm2_mui_sub_muj,
+                   mui_sub_muj_TUi, mui_sub_muj_TUj, Z, n, d_hi):
     # compute the gradients of all affine transforms
     grad = np.zeros(uamds_transforms.shape)
     for i in range(n):
         for j in range(i, n):
-            dBi, dBj, dci, dcj = gradient_ij(i, j, normal_distr_spec, uamds_transforms, precalc_constants)
+            dBi, dBj, dci, dcj = gradient_ij(i, j, normal_distr_spec, uamds_transforms, S, norm2_mui_sub_muj,
+                                             mui_sub_muj_TUi, mui_sub_muj_TUj, Z)
             # c gradients on top part of matrix
             grad[i, :] += dci
             grad[j, :] += dcj
             # B gradients below c part of matrix
-            grad[n+i*d_hi : n+(i+1)*d_hi, :] += dBi
-            grad[n+j*d_hi : n+(j+1)*d_hi, :] += dBj
+            grad[n + i * d_hi:n + (i + 1) * d_hi, :] += dBi
+            grad[n + j * d_hi:n + (j + 1) * d_hi, :] += dBj
     return grad
+
+
+def gradient(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_constants: tuple) -> np.ndarray:
+    # print("grad")
+    d_hi = normal_distr_spec.shape[1]
+    # d_lo = uamds_transforms.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+
+    S = precalc_constants[3]
+    norm2_mui_sub_muj = precalc_constants[5]
+    mui_sub_muj_TUi = precalc_constants[7]
+    mui_sub_muj_TUj = precalc_constants[8]
+    Z = precalc_constants[9]
+
+    # print(S.shape, norm2_mui_sub_muj.shape, mui_sub_muj_TUi.shape, mui_sub_muj_TUj.shape, Z.shape)
+
+    return gradient_numba(normal_distr_spec, uamds_transforms, S, norm2_mui_sub_muj,
+                   mui_sub_muj_TUi, mui_sub_muj_TUj, Z, n, d_hi)
 
 
 def iterate_simple_gradient_descent(
@@ -267,7 +346,7 @@ def iterate_simple_gradient_descent(
 
 def convert_xform_uamds_to_affine(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = uamds_transforms.shape[1]
+    # d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
 
     translations = []
@@ -287,7 +366,7 @@ def convert_xform_uamds_to_affine(normal_distr_spec: np.ndarray, uamds_transform
 
 def convert_xform_affine_to_uamds(normal_distr_spec: np.ndarray, affine_transforms: np.ndarray) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = affine_transforms.shape[1]
+    # d_lo = affine_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
 
     mus_lo = []
@@ -307,7 +386,7 @@ def convert_xform_affine_to_uamds(normal_distr_spec: np.ndarray, affine_transfor
 
 def perform_projection(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray) -> np.ndarray:
     d_hi = normal_distr_spec.shape[1]
-    d_lo = uamds_transforms.shape[1]
+    # d_lo = uamds_transforms.shape[1]
     n = normal_distr_spec.shape[0] // (d_hi + 1)
 
     mus = []
