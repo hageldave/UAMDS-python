@@ -6,6 +6,7 @@ import pokemon
 import uamds
 import util
 import uapca
+from sklearn.manifold import MDS
 
 
 def main1():
@@ -23,17 +24,20 @@ def main1():
     lo_d = 2
     pre = uamds.precalculate_constants(distrib_spec)
     # random initialization
+    np.random.seed(0)
     uamds_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
+
+    # uamds_transforms[0:15,:] = MDS(n_components=2, normalized_stress='auto').fit_transform(means_hi)
+
     # test plausibility of gradient implemenentation against stress
     check_gradient(distrib_spec, uamds_transforms, pre)
     # perform UAMDS over and over again
     n_repetitions = 10000
-    matplotlib.use("TkAgg") # may require on linux: sudo apt-get install python3-tk
+    matplotlib.use("TkAgg")  # may require on linux: sudo apt-get install python3-tk
     with plt.ion():
         fig = ax = None
         for rep in range(n_repetitions):
-            uamds_transforms = uamds.iterate_simple_gradient_descent(
-                distrib_spec, uamds_transforms, pre, num_iter=100, a=0.0001)
+
             # project distributions
             distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
             means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
@@ -41,6 +45,14 @@ def main1():
                 ax.clear()
             fig, ax = plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors(), fig=fig, ax=ax)
             plt.pause(0.1)
+
+            uamds_transforms = uamds.iterate_simple_gradient_descent(
+                distrib_spec, uamds_transforms, pre, num_iter=100, a=0.02, b1=0.9,
+                b2=0.999,
+                e=10e-7)
+            stress = uamds.stress(distrib_spec, uamds_transforms, pre)
+            iteration = (rep + 1) * 100
+            print(f"Stress: {stress} Iteration:{iteration}")
 
 
 def main2():
@@ -57,9 +69,9 @@ def main2():
     lo_d = 2
     # compute UAPCA projection
     eigvecs, eigvals = uapca.compute_uapca(distrib_spec[0:n, :], distrib_spec[n:, :])
-    projmat = eigvecs[:,:2]
+    projmat = eigvecs[:, :2]
     # create initialization for UAMDS from UAPCA (each distribution has translation 0 and the same projection matrix)
-    translations = np.zeros((n,2))
+    translations = np.zeros((n, 2))
     projection_mats = np.vstack([projmat for i in range(n)])
     affine_transforms = np.vstack([translations, projection_mats])
     uamds_transforms = uamds.convert_xform_affine_to_uamds(distrib_spec, affine_transforms)
@@ -71,9 +83,10 @@ def main2():
     n_samples = 500
     samples = [np.random.multivariate_normal(distrib_set[i].mean, distrib_set[i].cov, size=n_samples) for i in range(n)]
     affine_transforms = uamds.convert_xform_uamds_to_affine(distrib_spec, uamds_transforms)
-    translations = affine_transforms[:n,:]
-    projection_mats = affine_transforms[n:,:]
-    projected_samples = [samples[i] @ projection_mats[i*hi_d:(i+1)*hi_d,:] + translations[i,:] for i in range(n)]
+    translations = affine_transforms[:n, :]
+    projection_mats = affine_transforms[n:, :]
+    projected_samples = [samples[i] @ projection_mats[i * hi_d:(i + 1) * hi_d, :] + translations[i, :] for i in
+                         range(n)]
     # show samples
     labels = types
     colormap = pokemon.get_type_colors()
@@ -83,7 +96,6 @@ def main2():
     ax.axis('equal')
     ax.scatter(np.vstack(projected_samples)[:, 0], np.vstack(projected_samples)[:, 1], c=sample_colors, s=2)
     plt.show()
-    
 
 
 def check_gradient(distrib_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple):
@@ -107,7 +119,7 @@ def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray]
         fig, ax = plt.subplots(figsize=(4, 4))
     ax.axis('equal')
     colors = [colormap[label] for label in labels]
-    ax.scatter(np.vstack(means)[:,0], np.vstack(means)[:,1], c=colors, s=2)
+    ax.scatter(np.vstack(means)[:, 0], np.vstack(means)[:, 1], c=colors, s=2)
     # confidence ellipses for each distribution
     for i in range(n):
         util.confidence_ellipse(means[i], covs[i], ax, n_std=1, edgecolor=colormap[labels[i]])
@@ -116,7 +128,8 @@ def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray]
     return fig, ax
 
 
-def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap, n_samples: int=100):
+def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap,
+                                n_samples: int = 100):
     n = len(means)
     # draw samples from 2D normal distributions
     samples = np.vstack([np.random.multivariate_normal(means[i], covs[i], size=n_samples) for i in range(n)])
@@ -128,10 +141,48 @@ def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray],
     ax.scatter(samples[:, 0], samples[:, 1], c=sample_colors, s=2)
 
 
+def testConvergence():
+    pokemon_distribs = pokemon.get_normal_distribs()
+    # get first 9 pokemon (1st gen starters)
+    n = 15
+    distrib_set = pokemon_distribs[0:n]
+    types = pokemon.get_type1()[0:n]
+    means_hi = [d.mean for d in distrib_set]
+    covs_hi = [d.cov for d in distrib_set]
+    # prepare data matrix consisting of a block of means followed by a block of covs
+    distrib_spec = util.mk_normal_distr_spec(means_hi, covs_hi)
+    # dimensionality and precomputation for UAMDS
+    hi_d = distrib_spec.shape[1]
+    lo_d = 2
+    pre = uamds.precalculate_constants(distrib_spec)
+    # random initialization
+    np.random.seed(0)
+    uamds_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
+
+    # test plausibility of gradient implemenentation against stress
+    check_gradient(distrib_spec, uamds_transforms, pre)
+    results = dict()
+    optimizers = {"adam": [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
+                  "momentum": [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
+                  "default": [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05]}
+
+    optimizers = {
+                  "adam": [0.2]}
+    for optimizer, lrs in optimizers.items():
+        for lr in lrs:
+            # perform UAMDS over and over again
+            n_repetitions = 4000
+            uamds.iteration = 0
+            for rep in range(n_repetitions):
+                uamds_transforms = uamds.iterate_simple_gradient_descent(
+                    distrib_spec, uamds_transforms, pre, num_iter=1, a=lr, b1=0.9,
+                    b2=0.999,
+                    e=10e-7, optimizer=optimizer)
+                stress = uamds.stress(distrib_spec, uamds_transforms, pre)
+                iteration = (rep + 1) * 1
+                print(f"optimizer: {optimizer} lr:{lr} stress: {stress} iteration:{iteration} ")
+
 
 if __name__ == '__main__':
-    main1()
-
-
-
-
+    # main1()
+    testConvergence()
