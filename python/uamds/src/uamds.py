@@ -1,5 +1,6 @@
 import numba
 import numpy as np
+from scipy.optimize import minimize
 
 from util import mk_normal_distr_spec
 
@@ -38,13 +39,13 @@ def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
     #     'Zij': Zij
     # }
     constants = (
-        mu,
-        cov,
-        U,
+        np.stack(mu),
+        np.stack(cov),
+        np.stack(U),
         np.stack(S),
-        Ssqrt,
+        np.stack(Ssqrt),
         np.stack(norm2_mui_sub_muj),
-        Ssqrti_UiTUj_Ssqrtj,
+        np.stack(Ssqrti_UiTUj_Ssqrtj),
         np.stack(mui_sub_muj_TUi),
         np.stack(mui_sub_muj_TUj),
         np.stack(Zij)
@@ -52,12 +53,9 @@ def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
     return constants
 
 
-def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, pre: tuple) -> float:
-    d_hi = normal_distr_spec.shape[1]
-    d_lo = uamds_transforms.shape[1]
-    n = normal_distr_spec.shape[0] // (d_hi + 1)
-    #  get constants
-    (
+@numba.njit()
+def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, 
+        #pre,
         mu,
         cov,
         U,
@@ -68,7 +66,23 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: n
         mui_sub_muj_TUi,
         mui_sub_muj_TUj,
         Zij
-    ) = pre
+) -> float:
+    d_hi = normal_distr_spec.shape[1]
+    d_lo = uamds_transforms.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+    # get constants
+    # (
+    #     mu,
+    #     cov,
+    #     U,
+    #     S,
+    #     Ssqrt,
+    #     norm2_mui_sub_muj,
+    #     Ssqrti_UiTUj_Ssqrtj,
+    #     mui_sub_muj_TUi,
+    #     mui_sub_muj_TUj,
+    #     Zij
+    # ) = pre
 
     # get some objects for i
     Si = S[i]
@@ -274,6 +288,7 @@ def gradient_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms:
     return dBi.T, dBj.T, dci, dcj
 
 
+
 def stress(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_constants: tuple=None) -> float:
     d_hi = normal_distr_spec.shape[1]
     d_lo = uamds_transforms.shape[1]
@@ -285,17 +300,17 @@ def stress(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, precalc_
     sum = 0
     for i in range(n):
         for j in range(i, n):
-            sum += stress_ij(i, j, normal_distr_spec, uamds_transforms, precalc_constants)
+            sum += stress_ij(i, j, normal_distr_spec, uamds_transforms, *precalc_constants)
     return sum
 
 
-@numba.njit()
+@numba.njit(parallel=True)
 def gradient_numba(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray, S, norm2_mui_sub_muj,
                    mui_sub_muj_TUi, mui_sub_muj_TUj, Z, n, d_hi):
     # compute the gradients of all affine transforms
     grad = np.zeros(uamds_transforms.shape)
-    for i in range(n):
-        for j in range(i, n):
+    for i in numba.prange(n):
+        for j in numba.prange(i, n):
             dBi, dBj, dci, dcj = gradient_ij(i, j, normal_distr_spec, uamds_transforms, S, norm2_mui_sub_muj,
                                              mui_sub_muj_TUi, mui_sub_muj_TUj, Z)
             # c gradients on top part of matrix
@@ -342,6 +357,34 @@ def iterate_simple_gradient_descent(
         grad = gradient(normal_distr_spec, uamds_transforms, precalc_constants)
         uamds_transforms -= grad * a
     return uamds_transforms
+
+
+def iterate_scipy(
+        normal_distr_spec: np.ndarray,
+        uamds_transforms_init: np.ndarray,
+        precalc_constants: tuple = None
+) -> np.ndarray:
+    if precalc_constants is None:
+        precalc_constants = precalculate_constants(normal_distr_spec)
+    pre = precalc_constants
+
+    # gradient descent
+    x_shape = uamds_transforms_init.shape
+    n_elems = uamds_transforms_init.size
+
+    def fx(x: np.ndarray):
+        return stress(normal_distr_spec, x.reshape(x_shape), pre)
+
+    def dfx(x: np.ndarray):
+        grad = gradient(normal_distr_spec, x.reshape(x_shape), pre)
+        return grad.flatten()
+
+    #err = scipy.optimize.check_grad(fx, dfx, uamds_transforms.reshape(uamds_transforms.size))
+    solution = minimize(fx, uamds_transforms_init.flatten(), method='BFGS', jac=dfx)
+    return solution.x.reshape(x_shape)
+
+
+
 
 
 def convert_xform_uamds_to_affine(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray) -> np.ndarray:

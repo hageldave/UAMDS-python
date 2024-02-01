@@ -24,6 +24,7 @@ def main1():
     lo_d = 2
     pre = uamds.precalculate_constants(distrib_spec)
     # random initialization
+    np.random.seed(0)
     uamds_transforms = np.random.rand(distrib_spec.shape[0], lo_d)
     # test plausibility of gradient implemenentation against stress
     check_gradient(distrib_spec, uamds_transforms, pre)
@@ -33,11 +34,11 @@ def main1():
     with plt.ion():
         fig = ax = None
         for rep in range(n_repetitions):
-            if rep == 1:
-                start = time.time_ns()
-                print(f"start at: {start / 1000}ms")
-            uamds_transforms = uamds.iterate_simple_gradient_descent(
-                distrib_spec, uamds_transforms, pre, num_iter=100, a=0.0001)
+            start = time.time_ns()
+            #uamds_transforms = uamds.iterate_simple_gradient_descent(distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.002)
+            uamds_transforms = uamds.iterate_scipy(distrib_spec, uamds_transforms, pre)
+            stop = time.time_ns()
+            print(f"stress: {uamds.stress(distrib_spec, uamds_transforms, pre)} in {(stop-start)/1000_000_000}s")
             # project distributions
             distrib_spec_lo = uamds.perform_projection(distrib_spec, uamds_transforms)
             means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
