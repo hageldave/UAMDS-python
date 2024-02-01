@@ -7,6 +7,7 @@ import uamds
 import util
 import uapca
 from sklearn.manifold import MDS
+import time
 
 
 def main1():
@@ -144,7 +145,7 @@ def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray],
 def testConvergence():
     pokemon_distribs = pokemon.get_normal_distribs()
     # get first 9 pokemon (1st gen starters)
-    n = 15
+    n = 200
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
     means_hi = [d.mean for d in distrib_set]
@@ -171,16 +172,23 @@ def testConvergence():
     for optimizer, lrs in optimizers.items():
         for lr in lrs:
             # perform UAMDS over and over again
-            n_repetitions = 4000
+            n_repetitions = 1000
             uamds.iteration = 0
+            times = np.zeros(n_repetitions)
+            start = time.time()
             for rep in range(n_repetitions):
                 uamds_transforms = uamds.iterate_simple_gradient_descent(
                     distrib_spec, uamds_transforms, pre, num_iter=1, a=lr, b1=0.9,
                     b2=0.999,
                     e=10e-7, optimizer=optimizer)
-                stress = uamds.stress(distrib_spec, uamds_transforms, pre)
-                iteration = (rep + 1) * 1
-                print(f"optimizer: {optimizer} lr:{lr} stress: {stress} iteration:{iteration} ")
+
+            elapsed_time = time.time() - start
+            stress = uamds.stress(distrib_spec, uamds_transforms, pre)
+            iteration = n_repetitions
+
+            print(f"optimizer: {optimizer} lr:{lr} stress: {stress} iteration:{iteration} time: {elapsed_time}")
+
+            print(elapsed_time)
 
 
 if __name__ == '__main__':
