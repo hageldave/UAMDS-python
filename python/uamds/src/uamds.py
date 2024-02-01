@@ -1,8 +1,10 @@
 import numba
 import numpy as np
+from scipy.spatial import distance_matrix
 from scipy.optimize import minimize
 
 from util import mk_normal_distr_spec
+import util
 
 
 def precalculate_constants(normal_distr_spec: np.ndarray) -> tuple:
@@ -143,75 +145,75 @@ def stress_ij(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: n
     return term1+term2+term3
 
 
-@numba.njit()
-def gradient_ij_nocopy(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray,
-                S, norm2_mui_sub_muj, mui_sub_muj_TUi, mui_sub_muj_TUj, Z) -> tuple:
-    d_hi = normal_distr_spec.shape[1]
-    # d_lo = uamds_transforms.shape[1]
-    n = normal_distr_spec.shape[0] // (d_hi + 1)
-    # get some objects for i
-    Si = S[i]
-    # mui = mu[i]
-    ci = uamds_transforms[i, :]
-    Bi = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T
-    BiSi = Bi @ Si
+# @numba.njit()
+# def gradient_ij_nocopy(i: int, j: int, normal_distr_spec: np.ndarray, uamds_transforms: np.ndarray,
+#                 S, norm2_mui_sub_muj, mui_sub_muj_TUi, mui_sub_muj_TUj, Z) -> tuple:
+#     d_hi = normal_distr_spec.shape[1]
+#     # d_lo = uamds_transforms.shape[1]
+#     n = normal_distr_spec.shape[0] // (d_hi + 1)
+#     # get some objects for i
+#     Si = S[i]
+#     # mui = mu[i]
+#     ci = uamds_transforms[i, :]
+#     Bi = uamds_transforms[n+i*d_hi : n+(i+1)*d_hi, :].T
+#     BiSi = Bi @ Si
 
-    # get some objects for j
-    Sj = S[j]
-    # muj = mu[j]
-    cj = uamds_transforms[j, :]
-    Bj = uamds_transforms[n+j*d_hi:n+(j+1)*d_hi, :].T
-    BjSj = Bj @ Sj
+#     # get some objects for j
+#     Sj = S[j]
+#     # muj = mu[j]
+#     cj = uamds_transforms[j, :]
+#     Bj = uamds_transforms[n+j*d_hi:n+(j+1)*d_hi, :].T
+#     BjSj = Bj @ Sj
 
-    # mui_sub_muj = mui - muj
-    ci_sub_cj = ci - cj
+#     # mui_sub_muj = mui - muj
+#     ci_sub_cj = ci - cj
 
-    # compute term 1 :
-    Zij = Z[i][j]
-    part1i = (BiSi @ Bi.T @ BiSi) - (BiSi @ Si)
-    part1j = (BjSj @ Bj.T @ BjSj) - (BjSj @ Sj)
-    part2i = (BjSj @ Bj.T @ BiSi) - (BjSj @ Zij.T @ Si)
-    part2j = (BiSi @ Bi.T @ BjSj) - (BiSi @ Zij   @ Sj)
-    dBi = (part1i + part2i) * 8
-    dBj = (part1j + part2j) * 8
+#     # compute term 1 :
+#     Zij = Z[i][j]
+#     part1i = (BiSi @ Bi.T @ BiSi) - (BiSi @ Si)
+#     part1j = (BjSj @ Bj.T @ BjSj) - (BjSj @ Sj)
+#     part2i = (BjSj @ Bj.T @ BiSi) - (BjSj @ Zij.T @ Si)
+#     part2j = (BiSi @ Bi.T @ BjSj) - (BiSi @ Zij   @ Sj)
+#     dBi = (part1i + part2i) * 8
+#     dBj = (part1j + part2j) * 8
 
-    # compute term 2 :
-    dci = np.zeros(ci.shape)
-    dcj = np.zeros(cj.shape)
-    if i != j:
-        # gradient part for B matrices
-        part3i = (np.outer(ci_sub_cj, (ci_sub_cj @ Bi)) - np.outer(ci_sub_cj, mui_sub_muj_TUi[i][j])) @ Si
-        part3j = (np.outer(ci_sub_cj, (ci_sub_cj @ Bj)) - np.outer(ci_sub_cj, mui_sub_muj_TUj[i][j])) @ Sj
-        dBi += 2*part3i
-        dBj += 2*part3j
-        # gradient part for c vectors
-        part4i = (mui_sub_muj_TUi[i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
-        part4j = (mui_sub_muj_TUj[i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
-        part4 = -2*(part4i+part4j)
-        dci += part4
-        dcj -= part4
+#     # compute term 2 :
+#     dci = np.zeros(ci.shape)
+#     dcj = np.zeros(cj.shape)
+#     if i != j:
+#         # gradient part for B matrices
+#         part3i = (np.outer(ci_sub_cj, (ci_sub_cj @ Bi)) - np.outer(ci_sub_cj, mui_sub_muj_TUi[i][j])) @ Si
+#         part3j = (np.outer(ci_sub_cj, (ci_sub_cj @ Bj)) - np.outer(ci_sub_cj, mui_sub_muj_TUj[i][j])) @ Sj
+#         dBi += 2*part3i
+#         dBj += 2*part3j
+#         # gradient part for c vectors
+#         part4i = (mui_sub_muj_TUi[i][j] - (ci_sub_cj @ Bi)) @ BiSi.T
+#         part4j = (mui_sub_muj_TUj[i][j] - (ci_sub_cj @ Bj)) @ BjSj.T
+#         part4 = -2*(part4i+part4j)
+#         dci += part4
+#         dcj -= part4
 
-    # compute term 3 :
-    norm1 = norm2_mui_sub_muj[i][j]
-    norm2 = np.dot(ci_sub_cj, ci_sub_cj)
-    part1 = norm1-norm2
-    part2 = part3 = 0.0
-    for k in range(d_hi):
-        sigma_i = Si[k, k]
-        sigma_j = Sj[k, k]
-        bik = Bi[:, k]
-        bjk = Bj[:, k]
-        part2 += (1 - np.dot(bik, bik)) * sigma_i
-        part3 += (1 - np.dot(bjk, bjk)) * sigma_j
-    term3 = -4 * (part1 + part2 + part3)
-    dBi += BiSi * term3
-    dBj += BjSj * term3
+#     # compute term 3 :
+#     norm1 = norm2_mui_sub_muj[i][j]
+#     norm2 = np.dot(ci_sub_cj, ci_sub_cj)
+#     part1 = norm1-norm2
+#     part2 = part3 = 0.0
+#     for k in range(d_hi):
+#         sigma_i = Si[k, k]
+#         sigma_j = Sj[k, k]
+#         bik = Bi[:, k]
+#         bjk = Bj[:, k]
+#         part2 += (1 - np.dot(bik, bik)) * sigma_i
+#         part3 += (1 - np.dot(bjk, bjk)) * sigma_j
+#     term3 = -4 * (part1 + part2 + part3)
+#     dBi += BiSi * term3
+#     dBj += BjSj * term3
 
-    if i != j:
-        dci += ci_sub_cj * term3
-        dcj -= ci_sub_cj * term3
+#     if i != j:
+#         dci += ci_sub_cj * term3
+#         dcj -= ci_sub_cj * term3
 
-    return dBi.T, dBj.T, dci, dcj
+#     return dBi.T, dBj.T, dci, dcj
 
 
 # with copy
@@ -446,52 +448,31 @@ def perform_projection(normal_distr_spec: np.ndarray, uamds_transforms: np.ndarr
 
 
 
-
-
-def main():
-    n = 4
-    d = 6
-    lo_d = 2
-
-    means = np.vstack([np.ones(d)*(i+1) for i in range(n)])
-    covs = np.vstack([mk_cov_mat(d, i+1) for i in range(n)])
-    normal_distr_spec = np.vstack([means, covs])
-    constants = precalculate_constants(normal_distr_spec)
-
-    c = np.vstack([np.ones(lo_d)*(i+1) for i in range(n)])
-    B = np.vstack([np.ones((d,lo_d))*(i*0.1+0.1) for i in range(n)])
-    uamds_transforms = np.vstack([c,B])
-
-    s = stress_ij(1,2, normal_distr_spec, uamds_transforms, constants)
-    dbi, dbj, dci, dcj = gradient_ij(1,2, normal_distr_spec, uamds_transforms, constants)
-    print(s)
-    print(dbi)
-    print(dbj)
-    print(dci)
-    print(dcj)
-    print(stress(normal_distr_spec, uamds_transforms, constants))
-    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, a=0.000001)
-    print(stress(normal_distr_spec, uamds_transforms, constants))
-    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, a=0.000001)
-    print(stress(normal_distr_spec, uamds_transforms, constants))
-    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, a=0.000001)
-    print(stress(normal_distr_spec, uamds_transforms, constants))
-    uamds_transforms = iterate_simple_gradient_descent(normal_distr_spec, uamds_transforms, constants, num_iter=100, a=0.000001)
-    print(stress(normal_distr_spec, uamds_transforms, constants))
+def apply_uamds(means: list[np.ndarray], covs: list[np.ndarray], target_dim=2) -> dict[str, list[np.ndarray] | float]:
+    normal_distr_spec = util.mk_normal_distr_spec(means, covs)
+    d_hi = normal_distr_spec.shape[1]
+    n = normal_distr_spec.shape[0] // (d_hi + 1)
+    # initialization
+    uamds_transforms = np.random.rand(normal_distr_spec.shape[0], target_dim)
+    avg_dist_hi = distance_matrix(normal_distr_spec[:n,:], normal_distr_spec[:n,:]).mean()
+    avg_dist_lo = distance_matrix(uamds_transforms[:n,:], uamds_transforms[:n,:]).mean()
+    uamds_transforms[:n,:] *= (avg_dist_hi/avg_dist_lo)
+    # compute UAMDS
+    pre = precalculate_constants(normal_distr_spec)
+    uamds_transforms = iterate_scipy(normal_distr_spec, uamds_transforms, pre)
+    s = stress(normal_distr_spec, uamds_transforms, pre)
+    # perform projection
+    normal_distribs_lo = perform_projection(normal_distr_spec, uamds_transforms)
+    means_lo, covs_lo = util.get_means_covs(normal_distribs_lo)
+    affine_transforms = convert_xform_uamds_to_affine(normal_distr_spec, uamds_transforms)
+    translations = affine_transforms[:n,:]
+    translations = [translations[i, :] for i in range(n)]
+    projection_matrices = affine_transforms[n:,:]
+    projection_matrices = [projection_matrices[i*d_hi:(i+1)*d_hi, :] for i in range(n)]
+    return {'means': means_lo, 'covs':covs_lo, 'translations': translations, 'projections': projection_matrices, 'stress': s}
 
 
 
 
 
-def mk_cov_mat(d, s):
-    a = np.array([i*s for i in range(d*d)])
-    a = a.reshape((d,d))
-    a = np.sqrt(a)
-    a = a - a.mean(axis=0)
-    cov = a.T @ a
-    return cov * (1/d)
-    #return np.eye(d) * s
 
-
-if __name__ == '__main__':
-    main()

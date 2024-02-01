@@ -90,6 +90,21 @@ def main2():
     ax.axis('equal')
     ax.scatter(np.vstack(projected_samples)[:, 0], np.vstack(projected_samples)[:, 1], c=sample_colors, s=2)
     plt.show()
+
+
+def main3():
+    pokemon_distribs = pokemon.get_normal_distribs()
+    # get first 9 pokemon (1st gen starters)
+    n = 9
+    distrib_set = pokemon_distribs[0:n]
+    types = pokemon.get_type1()[0:n]
+    means_hi = [d.mean for d in distrib_set]
+    covs_hi = [d.cov for d in distrib_set]
+    # do UAMDS
+    result = uamds.apply_uamds(means_hi, covs_hi)
+    print(f"stress: {result['stress']}")
+    plot_normal_distrib_contours(result['means'], result['covs'], types, pokemon.get_type_colors())
+    plt.show()
     
 
 
@@ -137,7 +152,7 @@ def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray],
 
 
 if __name__ == '__main__':
-    main1()
+    main3()
 
 
 
