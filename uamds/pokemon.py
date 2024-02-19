@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
 import distrib_estimation as db_est
+from importlib import resources
 
 
 def get_raw_data() -> pd.DataFrame:
-    return pd.read_csv("res/pokemon_stats.csv", delimiter=";")
+    res = resources.files("res").joinpath("pokemon_stats.csv")
+    return pd.read_csv(res, delimiter=";")
 
 
 def get_normal_distribs() -> list[db_est.MVN]:
