@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import distrib_estimation as db_est
 from importlib import resources
 
 
@@ -9,7 +8,7 @@ def get_raw_data() -> pd.DataFrame:
     return pd.read_csv(res, delimiter=";")
 
 
-def get_normal_distribs() -> list[db_est.MVN]:
+def get_normal_distribs() -> list[dict]:
     df = get_raw_data()
     distribs = []
     for i in range(df.shape[0]):
@@ -19,7 +18,7 @@ def get_normal_distribs() -> list[db_est.MVN]:
         deviation = (low-high)/2
         diag_variance = (deviation**2)/12
         cov = np.diag(diag_variance)
-        distribs.append(db_est.MVN(mean, cov))
+        distribs.append({'mean': mean, 'cov': cov})
     return distribs
 
 
@@ -32,6 +31,11 @@ def get_type1() -> list[str]:
 
     type1s = [typ1(types.iloc[i]) for i in range(types.shape[0])]
     return type1s
+
+def get_names() -> list[str]:
+    df = get_raw_data()
+    names = df["name"]
+    return [names[i] for i in range(names.size)]
 
 
 def get_type_colors() -> dict[str, str]:

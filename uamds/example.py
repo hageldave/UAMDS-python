@@ -15,8 +15,8 @@ def main1():
     n = 25
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
-    means_hi = [d.mean for d in distrib_set]
-    covs_hi = [d.cov for d in distrib_set]
+    means_hi = [d['mean'] for d in distrib_set]
+    covs_hi = [d['cov'] for d in distrib_set]
     # prepare data matrix consisting of a block of means followed by a block of covs
     distrib_spec = uamds.mk_normal_distr_spec(means_hi, covs_hi)
     # dimensionality and precomputation for UAMDS
@@ -57,8 +57,8 @@ def main2():
     n = 151
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
-    means_hi = [d.mean for d in distrib_set]
-    covs_hi = [d.cov for d in distrib_set]
+    means_hi = [d['mean'] for d in distrib_set]
+    covs_hi = [d['cov'] for d in distrib_set]
     # prepare data matrix consisting of a block of means followed by a block of covs
     distrib_spec = uamds.mk_normal_distr_spec(means_hi, covs_hi)
     hi_d = distrib_spec.shape[1]
@@ -99,8 +99,8 @@ def main3():
     n = 9
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
-    means_hi = [d.mean for d in distrib_set]
-    covs_hi = [d.cov for d in distrib_set]
+    means_hi = [d['mean'] for d in distrib_set]
+    covs_hi = [d['cov'] for d in distrib_set]
     # do UAMDS
     result = uamds.apply_uamds(means_hi, covs_hi)
     print(f"stress: {result['stress']}")
