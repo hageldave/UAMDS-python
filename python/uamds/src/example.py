@@ -12,7 +12,7 @@ import time
 def main1():
     pokemon_distribs = pokemon.get_normal_distribs()
     # get first 9 pokemon (1st gen starters)
-    n = 15
+    n = 25
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
     means_hi = [d.mean for d in distrib_set]
@@ -36,7 +36,8 @@ def main1():
         for rep in range(n_repetitions):
             start = time.time_ns()
             #uamds_transforms = uamds.iterate_simple_gradient_descent(distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.002)
-            uamds_transforms = uamds.iterate_scipy(distrib_spec, uamds_transforms, pre)
+            uamds_transforms = uamds.iterate_simple_gradient_descent(
+                distrib_spec, uamds_transforms, pre, a=0.01, num_iter=10, optimizer='adam')
             stop = time.time_ns()
             print(f"stress: {uamds.stress(distrib_spec, uamds_transforms, pre)} in {(stop-start)/1000_000_000}s")
             # project distributions
@@ -44,7 +45,8 @@ def main1():
             means_lo, covs_lo = util.get_means_covs(distrib_spec_lo)
             if ax is not None:
                 ax.clear()
-            fig, ax = plot_normal_distrib_contours(means_lo, covs_lo, types, pokemon.get_type_colors(), fig=fig, ax=ax)
+            fig, ax = plot_normal_distrib_contours(
+                means_lo, covs_lo, types, pokemon.get_type_colors(), stds=[1.5], fig=fig, ax=ax)
             plt.pause(0.1)
 
     print("done")
@@ -53,7 +55,7 @@ def main1():
 def main2():
     pokemon_distribs = pokemon.get_normal_distribs()
     # get first 9 pokemon (1st gen starters)
-    n = 9
+    n = 151
     distrib_set = pokemon_distribs[0:n]
     types = pokemon.get_type1()[0:n]
     means_hi = [d.mean for d in distrib_set]
@@ -73,9 +75,9 @@ def main2():
     # perform UAMDS
     pre = uamds.precalculate_constants(distrib_spec)
     uamds_transforms = uamds.iterate_simple_gradient_descent(
-        distrib_spec, uamds_transforms, pre, num_iter=1000, a=0.0001)
+        distrib_spec, uamds_transforms, pre, num_iter=200, a=0.1, optimizer='adam')
     # project high dimensional samples
-    n_samples = 500
+    n_samples = 100
     samples = [np.random.multivariate_normal(distrib_set[i].mean, distrib_set[i].cov, size=n_samples) for i in range(n)]
     affine_transforms = uamds.convert_xform_uamds_to_affine(distrib_spec, uamds_transforms)
     translations = affine_transforms[:n,:]
@@ -122,7 +124,14 @@ def check_gradient(distrib_spec: np.ndarray, uamds_transforms: np.ndarray, pre: 
     print(f"gradient approximation error: {err}")
 
 
-def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray], labels, colormap, fig=None, ax=None):
+def plot_normal_distrib_contours(
+        means: list[np.ndarray],
+        covs: list[np.ndarray],
+        labels,
+        colormap,
+        stds: list[float]=[1.,2.,3.],
+        fig=None,
+        ax=None):
     n = len(means)
     # make vis
     if fig is None or ax is None:
@@ -132,9 +141,8 @@ def plot_normal_distrib_contours(means: list[np.ndarray], covs: list[np.ndarray]
     ax.scatter(np.vstack(means)[:,0], np.vstack(means)[:,1], c=colors, s=2)
     # confidence ellipses for each distribution
     for i in range(n):
-        util.confidence_ellipse(means[i], covs[i], ax, n_std=1, edgecolor=colormap[labels[i]])
-        util.confidence_ellipse(means[i], covs[i], ax, n_std=2, edgecolor=colormap[labels[i]])
-        util.confidence_ellipse(means[i], covs[i], ax, n_std=3, edgecolor=colormap[labels[i]])
+        for std in stds:
+            util.confidence_ellipse(means[i], covs[i], ax, n_std=std, edgecolor=colormap[labels[i]])
     return fig, ax
 
 
@@ -152,7 +160,7 @@ def plot_normal_distrib_samples(means: list[np.ndarray], covs: list[np.ndarray],
 
 
 if __name__ == '__main__':
-    main3()
+    main1()
 
 
 
